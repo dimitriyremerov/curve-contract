@@ -1,15 +1,16 @@
 {
-    "lp_contract": "CurveTokenV3",
+    "base_pool": "steth",
     "pool_types": ["meta"],
     "swap_address": "TODO",
     "lp_token_address": "TODO",
+    "zap_address": "TODO",
     "gauge_addresses": ["TODO"],
+    "lp_contract": "CurveTokenV3",
     "lp_constructor": {
         "symbol": "USFCTKN",
         "name": "Curve.fi CTKN_Spartan_Bucket/steCRV"
     },
     "swap_constructor": {
-        "_base_pool": "0xDC24316b9AE028F1497c275EB9192a3Ea0f67022",
         "_oracles": [
             "0x869aA01b77f1e850207c09bDDCe8a7491a6167DA"
         ],
@@ -21,13 +22,14 @@
         {
             "name": "CTKN_Spartan_Bucket",
             "decimals": 18,
-            "tethered": false,
+            "wrapped": false,
             "underlying_address": "0x08ff7e2bE3C23AB3938b6D275193d6A49cCef73E"
         },
         {
             "name": "steCRV",
             "decimals": 18,
-            "tethered": false,
+            "wrapped": false,
+            "base_pool_token": true,
             "underlying_address": "0x06325440D014e39736583c165C2963BA99fAf14E"
         }
     ],
