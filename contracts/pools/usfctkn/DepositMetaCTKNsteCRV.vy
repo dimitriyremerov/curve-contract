@@ -96,7 +96,7 @@ def __init__(_pool: address, _token: address):
         if len(_response) > 0:
             assert convert(_response, bool)
 
-
+@payable
 @external
 def add_liquidity(_amounts: uint256[N_ALL_COINS], _min_mint_amount: uint256) -> uint256:
     """
@@ -123,20 +123,24 @@ def add_liquidity(_amounts: uint256[N_ALL_COINS], _min_mint_amount: uint256) -> 
             coin = self.base_coins[x]
             base_amounts[x] = amount
             deposit_base = True
-        # "safeTransferFrom" which works for ERC20s which return bool or not
-        _response: Bytes[32] = raw_call(
-            coin,
-            concat(
-                method_id("transferFrom(address,address,uint256)"),
-                convert(msg.sender, bytes32),
-                convert(self, bytes32),
-                convert(amount, bytes32),
-            ),
-            max_outsize=32,
-        )  # dev: failed transfer
-        if len(_response) > 0:
-            assert convert(_response, bool)  # dev: failed transfer
-        # end "safeTransferFrom"
+        if coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+            assert amount == msg.value
+        else:
+            # "safeTransferFrom" which works for ERC20s which return bool or not
+            _response: Bytes[32] = raw_call(
+                coin,
+                concat(
+                    method_id("transferFrom(address,address,uint256)"),
+                    convert(msg.sender, bytes32),
+                    convert(self, bytes32),
+                    convert(amount, bytes32),
+                ),
+                max_outsize=32,
+            )  # dev: failed transfer
+            if len(_response) > 0:
+                assert convert(_response, bool)  # dev: failed transfer
+            # end "safeTransferFrom"
+
         # Handle potential Tether fees
         if coin == FEE_ASSET:
             amount = ERC20(FEE_ASSET).balanceOf(self)
@@ -196,19 +200,22 @@ def remove_liquidity(_amount: uint256, _min_amounts: uint256[N_ALL_COINS]) -> ui
         else:
             coin = self.base_coins[i - MAX_COIN]
         amounts[i] = ERC20(coin).balanceOf(self)
-        # "safeTransfer" which works for ERC20s which return bool or not
-        _response: Bytes[32] = raw_call(
-            coin,
-            concat(
-                method_id("transfer(address,uint256)"),
-                convert(msg.sender, bytes32),
-                convert(amounts[i], bytes32),
-            ),
-            max_outsize=32,
-        )  # dev: failed transfer
-        if len(_response) > 0:
-            assert convert(_response, bool)  # dev: failed transfer
-        # end "safeTransfer"
+        if coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+            raw_call(msg.sender, b"", value=amounts[i])
+        else:
+            # "safeTransfer" which works for ERC20s which return bool or not
+            _response: Bytes[32] = raw_call(
+                coin,
+                concat(
+                    method_id("transfer(address,uint256)"),
+                    convert(msg.sender, bytes32),
+                    convert(amounts[i], bytes32),
+                ),
+                max_outsize=32,
+            )  # dev: failed transfer
+            if len(_response) > 0:
+                assert convert(_response, bool)  # dev: failed transfer
+            # end "safeTransfer"
 
     return amounts
 
@@ -239,19 +246,22 @@ def remove_liquidity_one_coin(_token_amount: uint256, i: int128, _min_amount: ui
 
     # Tranfer the coin out
     coin_amount: uint256 = ERC20(coin).balanceOf(self)
-    # "safeTransfer" which works for ERC20s which return bool or not
-    _response: Bytes[32] = raw_call(
-        coin,
-        concat(
-            method_id("transfer(address,uint256)"),
-            convert(msg.sender, bytes32),
-            convert(coin_amount, bytes32),
-        ),
-        max_outsize=32,
-    )  # dev: failed transfer
-    if len(_response) > 0:
-        assert convert(_response, bool)  # dev: failed transfer
-    # end "safeTransfer"
+    if coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+        raw_call(msg.sender, b"", value=coin_amount)
+    else:
+        # "safeTransfer" which works for ERC20s which return bool or not
+        _response: Bytes[32] = raw_call(
+            coin,
+            concat(
+                method_id("transfer(address,uint256)"),
+                convert(msg.sender, bytes32),
+                convert(coin_amount, bytes32),
+            ),
+            max_outsize=32,
+        )  # dev: failed transfer
+        if len(_response) > 0:
+            assert convert(_response, bool)  # dev: failed transfer
+        # end "safeTransfer"
 
     return coin_amount
 
@@ -313,20 +323,23 @@ def remove_liquidity_imbalance(_amounts: uint256[N_ALL_COINS], _max_burn_amount:
         else:
             coin = base_coins[i - MAX_COIN]
             amount = amounts_base[i - MAX_COIN]
-        # "safeTransfer" which works for ERC20s which return bool or not
         if amount > 0:
-            _response: Bytes[32] = raw_call(
-                coin,
-                concat(
-                    method_id("transfer(address,uint256)"),
-                    convert(msg.sender, bytes32),
-                    convert(amount, bytes32),
-                ),
-                max_outsize=32,
-            )  # dev: failed transfer
-            if len(_response) > 0:
-                assert convert(_response, bool)  # dev: failed transfer
-            # end "safeTransfer"
+            if coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+                raw_call(msg.sender, b"", value=amount)
+            else:
+                # "safeTransfer" which works for ERC20s which return bool or not
+                _response: Bytes[32] = raw_call(
+                    coin,
+                    concat(
+                        method_id("transfer(address,uint256)"),
+                        convert(msg.sender, bytes32),
+                        convert(amount, bytes32),
+                    ),
+                    max_outsize=32,
+                )  # dev: failed transfer
+                if len(_response) > 0:
+                    assert convert(_response, bool)  # dev: failed transfer
+                # end "safeTransfer"
 
     # Transfer the leftover LP token out
     leftover: uint256 = ERC20(lp_token).balanceOf(self)

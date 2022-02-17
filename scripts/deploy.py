@@ -5,17 +5,19 @@ from brownie.network.gas.strategies import GasNowScalingStrategy
 from brownie.project import load as load_project
 from brownie.project.main import get_loaded_projects
 
+GAS_PRICE = 100000000000
+MNEMONIC = "test test test test test test test test test test test junk"
 # set a throwaway admin account here
-DEPLOYER = accounts.add()
+DEPLOYER = accounts.from_mnemonic(MNEMONIC)
 REQUIRED_CONFIRMATIONS = 1
 
 # deployment settings
 # most settings are taken from `contracts/pools/{POOL_NAME}/pooldata.json`
-POOL_NAME = ""
+POOL_NAME = "usfctkn"
 
 # temporary owner address
-POOL_OWNER = "0xedf2c58e16cc606da1977e79e1e69e79c54fe242"
-GAUGE_OWNER = "0xedf2c58e16cc606da1977e79e1e69e79c54fe242"
+POOL_OWNER = "0xf5bE8b4C82B8A681BAcF357cFB712AB9e9296Cb2"
+GAUGE_OWNER = "0xf5bE8b4C82B8A681BAcF357cFB712AB9e9296Cb2"
 
 MINTER = "0xd061D61a4d941c39E5453435B6345Dc261C2fcE0"
 
@@ -27,9 +29,8 @@ def _tx_params():
     return {
         "from": DEPLOYER,
         "required_confs": REQUIRED_CONFIRMATIONS,
-        "gas_price": GasNowScalingStrategy("standard", "fast"),
+        "gas_price": GAS_PRICE,
     }
-
 
 def main():
     project = get_loaded_projects()[0]

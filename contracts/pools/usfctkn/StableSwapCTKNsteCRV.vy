@@ -21,8 +21,8 @@ interface Curve:
     def fee() -> uint256: view
     def get_dy(i: int128, j: int128, dx: uint256) -> uint256: view
     def get_dy_underlying(i: int128, j: int128, dx: uint256) -> uint256: view
-    def exchange(i: int128, j: int128, dx: uint256, min_dy: uint256): nonpayable
-    def add_liquidity(amounts: uint256[BASE_N_COINS], min_mint_amount: uint256): nonpayable
+    def exchange(i: int128, j: int128, dx: uint256, min_dy: uint256): payable
+    def add_liquidity(amounts: uint256[BASE_N_COINS], min_mint_amount: uint256): payable
     def remove_liquidity_one_coin(_token_amount: uint256, i: int128, min_amount: uint256): nonpayable
 
 interface PriceOracle:
@@ -180,6 +180,7 @@ def __init__(
     self.owner = _owner
     self.kill_deadline = block.timestamp + KILL_DEADLINE_DT
     self.lp_token = _pool_token
+    self.oracles = _oracles
 
     self.base_pool = _base_pool
     self.base_virtual_price = Curve(_base_pool).get_virtual_price()
@@ -252,7 +253,6 @@ def _xp(rates: uint256[N_COINS]) -> uint256[N_COINS]:
         result[i] = result[i] * self.balances[i] / PRECISION
     return result
 
-
 @pure
 @internal
 def _xp_mem(rates: uint256[N_COINS], _balances: uint256[N_COINS]) -> uint256[N_COINS]:
@@ -280,7 +280,6 @@ def _vp_rate_ro() -> uint256:
         return Curve(self.base_pool).get_virtual_price()
     else:
         return self.base_virtual_price
-
 
 @pure
 @internal
@@ -641,6 +640,7 @@ def exchange(i: int128, j: int128, _dx: uint256, _min_dy: uint256) -> uint256:
     return dy
 
 
+@payable
 @external
 @nonreentrant('lock')
 def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) -> uint256:
@@ -685,18 +685,22 @@ def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) ->
     if input_coin == FEE_ASSET:
         dx_w_fee = ERC20(FEE_ASSET).balanceOf(self)
 
-    response: Bytes[32] = raw_call(
-        input_coin,
-        concat(
-            method_id("transferFrom(address,address,uint256)"),
-            convert(msg.sender, bytes32),
-            convert(self, bytes32),
-            convert(_dx, bytes32),
-        ),
-        max_outsize=32,
-    )
-    if len(response) > 0:
-        assert convert(response, bool)
+    if input_coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+        assert msg.value == _dx
+    else:
+        assert msg.value == 0
+        _response: Bytes[32] = raw_call(
+            input_coin,
+            concat(
+                method_id("transferFrom(address,address,uint256)"),
+                convert(msg.sender, bytes32),
+                convert(self, bytes32),
+                convert(_dx, bytes32),
+            ),
+            max_outsize=32,
+        )
+        if len(_response) > 0:
+            assert convert(_response, bool)
 
     # Handle potential Tether fees
     if input_coin == FEE_ASSET:
@@ -717,7 +721,7 @@ def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) ->
             coin_i: address = self.coins[MAX_COIN]
             # Deposit and measure delta
             x = ERC20(coin_i).balanceOf(self)
-            Curve(base_pool).add_liquidity(base_inputs, 0)
+            Curve(base_pool).add_liquidity(base_inputs, 0, value=msg.value)
             # Need to convert pool token to "virtual" units using rates
             # dx is also different now
             dx_w_fee = ERC20(coin_i).balanceOf(self) - x
@@ -754,22 +758,25 @@ def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) ->
     else:
         # If both are from the base pool
         dy = ERC20(output_coin).balanceOf(self)
-        Curve(base_pool).exchange(base_i, base_j, dx_w_fee, _min_dy)
+        Curve(base_pool).exchange(base_i, base_j, dx_w_fee, _min_dy, value=msg.value)
         dy = ERC20(output_coin).balanceOf(self) - dy
 
-    # "safeTransfer" which works for ERC20s which return bool or not
-    response = raw_call(
-        output_coin,
-        concat(
-            method_id("transfer(address,uint256)"),
-            convert(msg.sender, bytes32),
-            convert(dy, bytes32),
-        ),
-        max_outsize=32,
-    )  # dev: failed transfer
-    if len(response) > 0:
-        assert convert(response, bool)  # dev: failed transfer
-    # end "safeTransfer"
+    if output_coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+        raw_call(msg.sender, b"", value=dy)
+    else:
+        # "safeTransfer" which works for ERC20s which return bool or not
+        response: Bytes[32] = raw_call(
+            output_coin,
+            concat(
+                method_id("transfer(address,uint256)"),
+                convert(msg.sender, bytes32),
+                convert(dy, bytes32),
+            ),
+            max_outsize=32,
+        )  # dev: failed transfer
+        if len(response) > 0:
+            assert convert(response, bool)  # dev: failed transfer
+        # end "safeTransfer"
 
     log TokenExchangeUnderlying(msg.sender, i, _dx, j, dy)
 
@@ -1122,3 +1129,8 @@ def kill_me():
 def unkill_me():
     assert msg.sender == self.owner  # dev: only owner
     self.is_killed = False
+
+@external
+def set_oracles(_oracles: address[MAX_COIN]):
+    assert msg.sender == self.owner # dev: only owner
+    self.oracles = _oracles
