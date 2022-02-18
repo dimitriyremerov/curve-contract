@@ -105,9 +105,6 @@ PRECISION: constant(uint256) = 10 ** 18  # The precision to convert to
 PRECISION_MUL: constant(uint256[N_COINS]) = [1, 1] # TODO: validate if that's correct
 BASE_N_COINS: constant(int128) = 2
 
-# An asset which may have a transfer fee (USDT)
-FEE_ASSET: constant(address) = 0xdAC17F958D2ee523a2206206994597C13D831ec7
-
 MAX_ADMIN_FEE: constant(uint256) = 10 * 10 ** 9
 MAX_FEE: constant(uint256) = 5 * 10 ** 9
 MAX_A: constant(uint256) = 10 ** 6
@@ -239,11 +236,11 @@ def A_precise() -> uint256:
 @view
 @internal
 def _rates(_vp_rate: uint256) -> uint256[N_COINS]:
-    result: uint256[N_COINS] = empty(uint256[N_COINS])
-    for i in range(MAX_COIN):
-        result[i] = PriceOracle(self.oracles[i]).getExchangeRate()
-    result[MAX_COIN] = _vp_rate
-    return result
+    # Hardcoded only one base coin with one oracle, as per request of Curve team
+    return [
+        PriceOracle(self.oracles[0]).getExchangeRate(),
+        _vp_rate
+    ]
 
 @view
 @internal
@@ -639,6 +636,12 @@ def exchange(i: int128, j: int128, _dx: uint256, _min_dy: uint256) -> uint256:
 
     return dy
 
+@view
+@internal
+def _balance(coin: address, holder: address) -> uint256:
+    if coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+        return holder.balance
+    return ERC20(coin).balanceOf(holder)
 
 @payable
 @external
@@ -682,8 +685,6 @@ def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) ->
 
     # Handle potential Tether fees
     dx_w_fee: uint256 = _dx
-    if input_coin == FEE_ASSET:
-        dx_w_fee = ERC20(FEE_ASSET).balanceOf(self)
 
     if input_coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
         assert msg.value == _dx
@@ -702,10 +703,6 @@ def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) ->
         if len(_response) > 0:
             assert convert(_response, bool)
 
-    # Handle potential Tether fees
-    if input_coin == FEE_ASSET:
-        dx_w_fee = ERC20(FEE_ASSET).balanceOf(self) - dx_w_fee
-
     if base_i < 0 or base_j < 0:
         old_balances: uint256[N_COINS] = self.balances
         xp: uint256[N_COINS] = self._xp_mem(rates, old_balances)
@@ -718,6 +715,7 @@ def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) ->
             # At first, get the amount of pool tokens
             base_inputs: uint256[BASE_N_COINS] = empty(uint256[BASE_N_COINS])
             base_inputs[base_i] = dx_w_fee
+            # this coin can't be ETH
             coin_i: address = self.coins[MAX_COIN]
             # Deposit and measure delta
             x = ERC20(coin_i).balanceOf(self)
@@ -749,17 +747,17 @@ def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) ->
 
         # Withdraw from the base pool if needed
         if base_j >= 0:
-            out_amount: uint256 = ERC20(output_coin).balanceOf(self)
+            out_amount: uint256 = self._balance(output_coin, self)
             Curve(base_pool).remove_liquidity_one_coin(dy, base_j, 0)
-            dy = ERC20(output_coin).balanceOf(self) - out_amount
+            dy = self._balance(output_coin, self) - out_amount
 
         assert dy >= _min_dy, "Too few coins in result"
 
     else:
         # If both are from the base pool
-        dy = ERC20(output_coin).balanceOf(self)
+        dy = self._balance(output_coin, self)
         Curve(base_pool).exchange(base_i, base_j, dx_w_fee, _min_dy, value=msg.value)
-        dy = ERC20(output_coin).balanceOf(self) - dy
+        dy = self._balance(output_coin, self) - dy
 
     if output_coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
         raw_call(msg.sender, b"", value=dy)

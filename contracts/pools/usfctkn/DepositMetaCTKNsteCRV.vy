@@ -37,9 +37,6 @@ MAX_COIN: constant(int128) = N_COINS-1
 BASE_N_COINS: constant(int128) = 2
 N_ALL_COINS: constant(int128) = N_COINS + BASE_N_COINS - 1
 
-# An asset which may have a transfer fee (USDT)
-FEE_ASSET: constant(address) = 0xdAC17F958D2ee523a2206206994597C13D831ec7
-
 FEE_DENOMINATOR: constant(uint256) = 10 ** 10
 FEE_IMPRECISION: constant(uint256) = 100 * 10 ** 8  # % of the fee
 
@@ -140,14 +137,6 @@ def add_liquidity(_amounts: uint256[N_ALL_COINS], _min_mint_amount: uint256) -> 
             if len(_response) > 0:
                 assert convert(_response, bool)  # dev: failed transfer
             # end "safeTransferFrom"
-
-        # Handle potential Tether fees
-        if coin == FEE_ASSET:
-            amount = ERC20(FEE_ASSET).balanceOf(self)
-            if i < MAX_COIN:
-                meta_amounts[i] = amount
-            else:
-                base_amounts[i - MAX_COIN] = amount
 
     # Deposit to the base pool
     if deposit_base:
