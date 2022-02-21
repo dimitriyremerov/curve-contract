@@ -114,7 +114,10 @@ ADMIN_ACTIONS_DELAY: constant(uint256) = 3 * 86400
 MIN_RAMP_TIME: constant(uint256) = 86400
 
 coins: public(address[N_COINS])
-oracles: public(address[MAX_COIN])
+# Hardcoded only one base coin with one oracle, as per request of Curve team
+oracle: public(address)
+# Admin for automatic ramp ups of A
+admin: public(address)
 balances: public(uint256[N_COINS])
 fee: public(uint256)  # fee * 1e10
 admin_fee: public(uint256)  # admin_fee * 1e10
@@ -152,7 +155,8 @@ def __init__(
     _coins: address[N_COINS],
     _pool_token: address,
     _base_pool: address,
-    _oracles: address[MAX_COIN],
+    _oracle: address,
+    _admin: address,
     _A: uint256,
     _fee: uint256,
     _admin_fee: uint256
@@ -163,6 +167,8 @@ def __init__(
     @param _coins Addresses of ERC20 conracts of coins
     @param _pool_token Address of the token representing LP share
     @param _base_pool Address of the base pool (which will have a virtual price)
+    @param _oracle Price Oracle that returns price of the base asset
+    @param _oracle Admin for controlling A ramps automatically
     @param _A Amplification coefficient multiplied by n * (n - 1)
     @param _fee Fee to charge for exchanges
     @param _admin_fee Admin fee
@@ -177,7 +183,8 @@ def __init__(
     self.owner = _owner
     self.kill_deadline = block.timestamp + KILL_DEADLINE_DT
     self.lp_token = _pool_token
-    self.oracles = _oracles
+    self.oracle = _oracle
+    self.admin = _admin
 
     self.base_pool = _base_pool
     self.base_virtual_price = Curve(_base_pool).get_virtual_price()
@@ -238,7 +245,7 @@ def A_precise() -> uint256:
 def _rates(_vp_rate: uint256) -> uint256[N_COINS]:
     # Hardcoded only one base coin with one oracle, as per request of Curve team
     return [
-        PriceOracle(self.oracles[0]).getExchangeRate(),
+        PriceOracle(self.oracle).getExchangeRate(),
         _vp_rate
     ]
 
@@ -715,7 +722,7 @@ def exchange_underlying(i: int128, j: int128, _dx: uint256, _min_dy: uint256) ->
             # At first, get the amount of pool tokens
             base_inputs: uint256[BASE_N_COINS] = empty(uint256[BASE_N_COINS])
             base_inputs[base_i] = dx_w_fee
-            # this coin can't be ETH
+            # this is base lp coin, can't be eth
             coin_i: address = self.coins[MAX_COIN]
             # Deposit and measure delta
             x = ERC20(coin_i).balanceOf(self)
@@ -989,7 +996,7 @@ def remove_liquidity_one_coin(_token_amount: uint256, i: int128, _min_amount: ui
 ### Admin functions ###
 @external
 def ramp_A(_future_A: uint256, _future_time: uint256):
-    assert msg.sender == self.owner  # dev: only owner
+    assert msg.sender == self.owner or msg.sender == self.admin # dev: owner or admin
     assert block.timestamp >= self.initial_A_time + MIN_RAMP_TIME
     assert _future_time >= block.timestamp + MIN_RAMP_TIME  # dev: insufficient time
 
@@ -1129,6 +1136,6 @@ def unkill_me():
     self.is_killed = False
 
 @external
-def set_oracles(_oracles: address[MAX_COIN]):
+def set_oracle(_oracle: address):
     assert msg.sender == self.owner # dev: only owner
-    self.oracles = _oracles
+    self.oracle = _oracle

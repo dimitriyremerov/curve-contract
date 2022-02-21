@@ -7,9 +7,8 @@
         "name": "Curve.fi CTKN_Spartan_Bucket/steCRV"
     },
     "swap_constructor": {
-        "_oracles": [
-            "0x869aA01b77f1e850207c09bDDCe8a7491a6167DA"
-        ],
+        "_oracle": "0x869aA01b77f1e850207c09bDDCe8a7491a6167DA",
+        "_admin": "0x3b6c03b232f87AEE2ea6561EC7bf080a7710d667",
         "_A": 100,
         "_fee": 4000000,
         "_admin_fee": 5000000000

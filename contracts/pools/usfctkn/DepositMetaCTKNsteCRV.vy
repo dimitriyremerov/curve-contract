@@ -22,7 +22,7 @@ interface CurveMeta:
     def coins(i: uint256) -> address: view
 
 interface CurveBase:
-    def add_liquidity(amounts: uint256[BASE_N_COINS], min_mint_amount: uint256): nonpayable
+    def add_liquidity(amounts: uint256[BASE_N_COINS], min_mint_amount: uint256): payable
     def remove_liquidity(_amount: uint256, min_amounts: uint256[BASE_N_COINS]): nonpayable
     def remove_liquidity_one_coin(_token_amount: uint256, i: int128, min_amount: uint256): nonpayable
     def remove_liquidity_imbalance(amounts: uint256[BASE_N_COINS], max_burn_amount: uint256): nonpayable
@@ -93,6 +93,13 @@ def __init__(_pool: address, _token: address):
         if len(_response) > 0:
             assert convert(_response, bool)
 
+@view
+@internal
+def _balance(coin: address, holder: address) -> uint256:
+    if coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
+        return holder.balance
+    return ERC20(coin).balanceOf(holder)
+
 @payable
 @external
 def add_liquidity(_amounts: uint256[N_ALL_COINS], _min_mint_amount: uint256) -> uint256:
@@ -140,7 +147,8 @@ def add_liquidity(_amounts: uint256[N_ALL_COINS], _min_mint_amount: uint256) -> 
 
     # Deposit to the base pool
     if deposit_base:
-        CurveBase(self.base_pool).add_liquidity(base_amounts, 0)
+        CurveBase(self.base_pool).add_liquidity(base_amounts, 0, value=msg.value)
+        # coins from meta pool can't be eth
         meta_amounts[MAX_COIN] = ERC20(self.coins[MAX_COIN]).balanceOf(self)
 
     # Deposit to the meta pool
@@ -176,6 +184,7 @@ def remove_liquidity(_amount: uint256, _min_amounts: uint256[N_ALL_COINS]) -> ui
     CurveMeta(self.pool).remove_liquidity(_amount, min_amounts_meta)
 
     # Withdraw from base
+    # coins from meta pool can't be eth
     _base_amount: uint256 = ERC20(self.coins[MAX_COIN]).balanceOf(self)
     for i in range(BASE_N_COINS):
         min_amounts_base[i] = _min_amounts[MAX_COIN+i]
@@ -188,7 +197,7 @@ def remove_liquidity(_amount: uint256, _min_amounts: uint256[N_ALL_COINS]) -> ui
             coin = self.coins[i]
         else:
             coin = self.base_coins[i - MAX_COIN]
-        amounts[i] = ERC20(coin).balanceOf(self)
+        amounts[i] = self._balance(coin, self)
         if coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
             raw_call(msg.sender, b"", value=amounts[i])
         else:
@@ -234,7 +243,7 @@ def remove_liquidity_one_coin(_token_amount: uint256, i: int128, _min_amount: ui
         )
 
     # Tranfer the coin out
-    coin_amount: uint256 = ERC20(coin).balanceOf(self)
+    coin_amount: uint256 = self._balance(coin, self)
     if coin == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:
         raw_call(msg.sender, b"", value=coin_amount)
     else:
@@ -298,6 +307,7 @@ def remove_liquidity_imbalance(_amounts: uint256[N_ALL_COINS], _max_burn_amount:
     CurveMeta(meta_pool).remove_liquidity_imbalance(amounts_meta, _max_burn_amount)
     if withdraw_base:
         CurveBase(base_pool).remove_liquidity_imbalance(amounts_base, amounts_meta[MAX_COIN])
+        # coins from meta pool can't be eth
         leftover_amounts[MAX_COIN] = ERC20(meta_coins[MAX_COIN]).balanceOf(self)
         if leftover_amounts[MAX_COIN] > 0:
             CurveMeta(meta_pool).add_liquidity(leftover_amounts, 0)
